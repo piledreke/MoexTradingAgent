@@ -81,7 +81,7 @@ class MoexClient:
         path: str,
         *,
         params: dict[str, Any] | None = None,
-        use_algopack: bool = False,
+        use_algopack: bool | None = None,
     ) -> dict[str, Any]:
         """Perform GET request to MOEX ISS or ALGOPACK.
 
@@ -96,6 +96,9 @@ class MoexClient:
         """
         params = params or {}
         # Do not force ISS query params here; callers may pass params when needed.
+
+        if use_algopack is None:
+            use_algopack = bool(self._token)
 
         base = self._algopack_base if (use_algopack and self._token) else self._public_base
         url = f"{base}{path}"
@@ -156,14 +159,12 @@ class MoexClient:
                 with attempt:
                     data = await _do_request()
         except Exception as e:
-            # Graceful degradation: if ALGOPACK fails, try public
             if use_algopack and self._token:
                 self._warn_once(
-                    f"algopack_fallback:{path}",
-                    f"ALGOPACK failed ({e}); falling back to public ISS",
+                    f"algopack_failed:{path}",
+                    f"ALGOPACK failed ({e}); public fallback disabled",
                     ttl=300,
                 )
-                return await self.request(path, params=params, use_algopack=False)
             raise
 
         self._cache[cache_key] = (time.time(), data)

@@ -255,7 +255,6 @@ async def health() -> HealthResponse:
 @router.get("/health/moex", response_model=MoexHealthResponse)
 async def moex_health() -> MoexHealthResponse:
     client = get_moex_client()
-    public_url = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities/LKOH/orderbook.json"
     auth_url = "https://apim.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities/LKOH/orderbook.json"
 
     async def _probe(url: str, token: str | None = None) -> tuple[str, str | None, str | None, str | None]:
@@ -276,7 +275,6 @@ async def moex_health() -> MoexHealthResponse:
                     return ("html", content_type, sample, None)
                 return ("ok", content_type, sample, None)
 
-    public_status, public_ct, public_sample, public_err = await _probe(public_url)
     auth_status = None
     auth_ct = None
     auth_sample = None
@@ -285,20 +283,19 @@ async def moex_health() -> MoexHealthResponse:
         auth_status, auth_ct, auth_sample, _ = await _probe(auth_url, client._token)
 
     explanation = (
-        "Public ISS orderbook endpoint returns HTML denial pages in this environment; "
-        "ALGOPACK with a valid token returns JSON."
-        if public_status == "html" and auth_status == "ok"
-        else "Orderbook health probe completed; inspect content type and sample for the active mode."
+        "ALGOPACK is the only active MOEX path; if the probe is not ok, check token/IP/access."
+        if auth_status == "ok"
+        else "ALGOPACK probe failed or token missing; inspect content type and sample."
     )
 
     return MoexHealthResponse(
-        status="ok" if auth_status == "ok" or public_status == "ok" else "degraded",
+        status="ok" if auth_status == "ok" else "degraded",
         algopack_token_present=bool(client._token),
-        public_orderbook_status=public_status if public_status != "error" else f"error: {public_err}",
+        public_orderbook_status="skipped",
         algopack_orderbook_status=auth_status,
-        public_orderbook_content_type=public_ct,
+        public_orderbook_content_type=None,
         algopack_orderbook_content_type=auth_ct,
-        public_orderbook_sample=public_sample,
+        public_orderbook_sample=None,
         algopack_orderbook_sample=auth_sample,
         explanation=explanation,
     )
