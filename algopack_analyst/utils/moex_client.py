@@ -48,6 +48,7 @@ class MoexClient:
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._cache_ttl = cache_ttl
         self._cache: dict[str, tuple[float, Any]] = {}
+        self._warn_cache: dict[str, float] = {}
         self._session: aiohttp.ClientSession | None = None
 
         if not self._token:
@@ -130,8 +131,10 @@ class MoexClient:
                         data = await resp.json(content_type=None)
                     except Exception as parse_err:
                         body = await resp.text()
-                        logger.warning(
-                            f"MOEX returned non-JSON response (status={resp.status}): {body[:400]!r}"
+                        self._warn_once(
+                            f"non_json:{url}:{resp.status}",
+                            f"MOEX returned non-JSON response (status={resp.status}): {body[:400]!r}",
+                            ttl=300,
                         )
                         raise aiohttp.ClientError(f"invalid_json_response: {parse_err}")
                     dt = (time.perf_counter() - t0) * 1000
@@ -155,7 +158,11 @@ class MoexClient:
         except Exception as e:
             # Graceful degradation: if ALGOPACK fails, try public
             if use_algopack and self._token:
-                logger.warning(f"ALGOPACK failed ({e}); falling back to public ISS")
+                self._warn_once(
+                    f"algopack_fallback:{path}",
+                    f"ALGOPACK failed ({e}); falling back to public ISS",
+                    ttl=300,
+                )
                 return await self.request(path, params=params, use_algopack=False)
             raise
 
@@ -504,7 +511,11 @@ class MoexClient:
                         continue
             return False
         except Exception as e:
-            logger.warning(f"is_market_open failed: {e}, defaulting to heuristic")
+            self._warn_once(
+                "is_market_open_failed",
+                f"is_market_open failed: {e}, defaulting to heuristic",
+                ttl=300,
+            )
             now = datetime.now(MSK)
             return now.weekday() < 5 and 10 <= now.hour < 19
 
@@ -533,6 +544,13 @@ class MoexClient:
             return False
         except Exception:
             return False
+
+    def _warn_once(self, key: str, message: str, ttl: int = 300) -> None:
+        now = time.time()
+        last = self._warn_cache.get(key)
+        if last is None or (now - last) >= ttl:
+            self._warn_cache[key] = now
+            logger.warning(message)
 
 
 def _coerce_numerics(df: pd.DataFrame) -> pd.DataFrame:

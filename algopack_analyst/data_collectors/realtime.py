@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -10,6 +11,16 @@ from config import settings
 from storage.repository import get_repo
 from utils.logger import logger
 from utils.moex_client import get_moex_client
+
+_WARN_CACHE: dict[str, float] = {}
+
+
+def _warn_once(key: str, message: str, ttl: int = 300) -> None:
+    now = time.time()
+    last = _WARN_CACHE.get(key)
+    if last is None or (now - last) >= ttl:
+        _WARN_CACHE[key] = now
+        logger.warning(message)
 
 
 async def _collect_ohlcv(ticker: str, interval: int = 1) -> int:
@@ -29,7 +40,7 @@ async def _collect_ohlcv(ticker: str, interval: int = 1) -> int:
             df["ts"] = pd.to_datetime(df["begin"])
         return repo.save_ohlcv(df)
     except Exception as e:
-        logger.warning(f"ohlcv {ticker} failed: {e}")
+        _warn_once(f"ohlcv:{ticker}", f"ohlcv {ticker} failed: {e}", ttl=300)
         return 0
 
 
@@ -54,7 +65,7 @@ async def _collect_orderbook(ticker: str) -> int:
         )
         return 1
     except Exception as e:
-        logger.warning(f"orderbook {ticker} failed: {e}")
+        _warn_once(f"orderbook:{ticker}", f"orderbook {ticker} failed: {e}", ttl=300)
         return 0
 
 
