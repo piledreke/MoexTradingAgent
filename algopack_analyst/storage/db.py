@@ -115,6 +115,7 @@ SCHEMA_SQL: list[str] = [
         PRIMARY KEY (ticker, tradeno)
     );
     """,
+    "CREATE SEQUENCE IF NOT EXISTS seq_agent_queries START 1;",
     """
     CREATE TABLE IF NOT EXISTS agent_queries (
         id BIGINT DEFAULT nextval('seq_agent_queries'),
@@ -125,8 +126,7 @@ SCHEMA_SQL: list[str] = [
         latency_ms DOUBLE,
         PRIMARY KEY (id)
     );
-    """,
-    "CREATE SEQUENCE IF NOT EXISTS seq_agent_queries START 1;",
+    "",
     # Indexes
     "CREATE INDEX IF NOT EXISTS idx_sc_eq_ticker_ts ON super_candles_eq (ticker, ts DESC);",
     "CREATE INDEX IF NOT EXISTS idx_obs_eq_ticker_ts ON obstats_eq (ticker, ts DESC);",
