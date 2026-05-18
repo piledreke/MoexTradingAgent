@@ -239,8 +239,11 @@ class MoexClient:
 
     # [S4] Orderbook (20 levels)
     async def get_orderbook(self, ticker: str) -> dict[str, Any]:
+        # Public ISS returns an HTML denial page for this endpoint in our environment.
+        # Prefer ALGOPACK when a token is available; otherwise fall back to public.
         data = await self.request(
-            f"/engines/stock/markets/shares/boards/tqbr/securities/{ticker}/orderbook.json"
+            f"/engines/stock/markets/shares/boards/tqbr/securities/{ticker}/orderbook.json",
+            use_algopack=bool(self._token),
         )
         df = self.to_dataframe(data, "orderbook")
         bids: list[tuple[float, float]] = []

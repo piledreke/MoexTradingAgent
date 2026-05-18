@@ -18,6 +18,7 @@ from api.schemas import (
     AnomalyItem,
     HealthResponse,
     Recommendation,
+    MoexHealthResponse,
     TopSignalsItem,
     WatchlistAddRequest,
 )
@@ -248,6 +249,58 @@ async def health() -> HealthResponse:
         watchlist_size=len(get_watchlist()),
         last_collections=last,
         db_size_mb=round(size_mb, 2),
+    )
+
+
+@router.get("/health/moex", response_model=MoexHealthResponse)
+async def moex_health() -> MoexHealthResponse:
+    client = get_moex_client()
+    public_url = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities/LKOH/orderbook.json"
+    auth_url = "https://apim.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities/LKOH/orderbook.json"
+
+    async def _probe(url: str, token: str | None = None) -> tuple[str, str | None, str | None, str | None]:
+        import aiohttp
+
+        headers = {"Accept": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url, headers=headers) as resp:
+                content_type = resp.headers.get("Content-Type")
+                text = await resp.text()
+                sample = text[:160].replace("\n", " ")
+                if resp.status >= 400:
+                    return ("error", content_type, sample, f"HTTP {resp.status}")
+                if "application/json" not in (content_type or "").lower():
+                    return ("html", content_type, sample, None)
+                return ("ok", content_type, sample, None)
+
+    public_status, public_ct, public_sample, public_err = await _probe(public_url)
+    auth_status = None
+    auth_ct = None
+    auth_sample = None
+
+    if client._token:
+        auth_status, auth_ct, auth_sample, _ = await _probe(auth_url, client._token)
+
+    explanation = (
+        "Public ISS orderbook endpoint returns HTML denial pages in this environment; "
+        "ALGOPACK with a valid token returns JSON."
+        if public_status == "html" and auth_status == "ok"
+        else "Orderbook health probe completed; inspect content type and sample for the active mode."
+    )
+
+    return MoexHealthResponse(
+        status="ok" if auth_status == "ok" or public_status == "ok" else "degraded",
+        algopack_token_present=bool(client._token),
+        public_orderbook_status=public_status if public_status != "error" else f"error: {public_err}",
+        algopack_orderbook_status=auth_status,
+        public_orderbook_content_type=public_ct,
+        algopack_orderbook_content_type=auth_ct,
+        public_orderbook_sample=public_sample,
+        algopack_orderbook_sample=auth_sample,
+        explanation=explanation,
     )
 
 

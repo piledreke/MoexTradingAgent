@@ -55,6 +55,18 @@ class HealthResponse(BaseModel):
     db_size_mb: float
 
 
+class MoexHealthResponse(BaseModel):
+    status: str
+    algopack_token_present: bool
+    public_orderbook_status: str
+    algopack_orderbook_status: str | None = None
+    public_orderbook_content_type: str | None = None
+    algopack_orderbook_content_type: str | None = None
+    public_orderbook_sample: str | None = None
+    algopack_orderbook_sample: str | None = None
+    explanation: str
+
+
 class TopSignalsItem(BaseModel):
     ticker: str
     score: int
