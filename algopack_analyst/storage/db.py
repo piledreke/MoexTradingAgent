@@ -12,6 +12,61 @@ from utils.logger import logger
 
 _lock = threading.Lock()
 _conn: duckdb.DuckDBPyConnection | None = None
+_safe_conn: "SafeDuckDBConnection" | None = None
+
+
+class SafeDuckDBResult:
+    def __init__(self, result: Any, lock: threading.Lock) -> None:
+        self._result = result
+        self._lock = lock
+
+    @property
+    def description(self) -> Any:
+        return self._result.description
+
+    def fetch_df(self) -> Any:
+        try:
+            return self._result.fetch_df()
+        finally:
+            self._lock.release()
+
+    def fetchone(self) -> Any:
+        try:
+            return self._result.fetchone()
+        finally:
+            self._lock.release()
+
+    def fetchall(self) -> Any:
+        try:
+            return self._result.fetchall()
+        finally:
+            self._lock.release()
+
+
+class SafeDuckDBConnection:
+    def __init__(self, conn: duckdb.DuckDBPyConnection, lock: threading.Lock) -> None:
+        self._conn = conn
+        self._lock = lock
+
+    def execute(self, *args: Any, **kwargs: Any) -> SafeDuckDBResult:
+        self._lock.acquire()
+        try:
+            result = self._conn.execute(*args, **kwargs)
+        except Exception:
+            self._lock.release()
+            raise
+        return SafeDuckDBResult(result, self._lock)
+
+    def executemany(self, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return self._conn.executemany(*args, **kwargs)
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self._conn, item)
 
 
 SCHEMA_SQL: list[str] = [
@@ -138,9 +193,9 @@ SCHEMA_SQL: list[str] = [
 ]
 
 
-def get_conn() -> duckdb.DuckDBPyConnection:
+def get_conn() -> SafeDuckDBConnection:
     """Return shared DuckDB connection (lazy initialization)."""
-    global _conn
+    global _conn, _safe_conn
     with _lock:
         if _conn is None:
             Path(settings.DUCKDB_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -149,7 +204,9 @@ def get_conn() -> duckdb.DuckDBPyConnection:
             _conn.execute("PRAGMA memory_limit='4GB';")
             _init_schema(_conn)
             logger.info(f"DuckDB connected: {settings.DUCKDB_PATH}")
-    return _conn
+        if _safe_conn is None:
+            _safe_conn = SafeDuckDBConnection(_conn, _lock)
+    return _safe_conn
 
 
 def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
@@ -162,8 +219,9 @@ def _init_schema(conn: duckdb.DuckDBPyConnection) -> None:
 
 
 def close_db() -> None:
-    global _conn
+    global _conn, _safe_conn
     with _lock:
         if _conn is not None:
             _conn.close()
             _conn = None
+            _safe_conn = None
