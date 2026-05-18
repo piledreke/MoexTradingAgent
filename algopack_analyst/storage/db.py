@@ -126,7 +126,7 @@ SCHEMA_SQL: list[str] = [
         latency_ms DOUBLE,
         PRIMARY KEY (id)
     );
-    "",
+    """,
     # Indexes
     "CREATE INDEX IF NOT EXISTS idx_sc_eq_ticker_ts ON super_candles_eq (ticker, ts DESC);",
     "CREATE INDEX IF NOT EXISTS idx_obs_eq_ticker_ts ON obstats_eq (ticker, ts DESC);",

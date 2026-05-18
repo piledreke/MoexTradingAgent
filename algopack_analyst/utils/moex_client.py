@@ -126,7 +126,14 @@ class MoexClient:
                     if resp.status >= 400:
                         body = await resp.text()
                         raise MoexAPIError(f"{resp.status}: {body[:200]}")
-                    data = await resp.json(content_type=None)
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception as parse_err:
+                        body = await resp.text()
+                        logger.warning(
+                            f"MOEX returned non-JSON response (status={resp.status}): {body[:400]!r}"
+                        )
+                        raise aiohttp.ClientError(f"invalid_json_response: {parse_err}")
                     dt = (time.perf_counter() - t0) * 1000
                     logger.debug(
                         f"MOEX GET {path} status={resp.status} "
